@@ -1,0 +1,922 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Måleri Timeline</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --primary:#1a56db;--primary-light:#e8f0fe;
+  --bg:#f0f4f8;--border:#e2e8f0;
+  --text:#1a202c;--muted:#718096;
+  --green:#38a169;--red:#e53e3e;
+  --r:8px;--sh:0 1px 3px rgba(0,0,0,.1);--sh-lg:0 4px 20px rgba(0,0,0,.12)
+}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:var(--bg);color:var(--text);min-height:100vh}
+.screen{display:none}.screen.active{display:flex}
+#setup-screen{display:flex}
+
+/* AUTH */
+#setup-screen,#login-screen{min-height:100vh;align-items:center;justify-content:center;background:linear-gradient(135deg,#1a56db,#0f3084)}
+.auth-card{background:#fff;border-radius:16px;padding:36px;width:100%;max-width:480px;box-shadow:var(--sh-lg)}
+.auth-logo{text-align:center;margin-bottom:26px}
+.auth-logo h1{font-size:22px;font-weight:700}
+.auth-logo p{color:var(--muted);font-size:13px;margin-top:4px}
+
+/* FORMS */
+.fg{margin-bottom:14px}
+label{display:block;font-size:13px;font-weight:600;margin-bottom:5px}
+input,select,textarea{width:100%;padding:10px 13px;border:1.5px solid var(--border);border-radius:var(--r);font-size:14px;color:var(--text);background:#fff;outline:none;transition:border-color .15s;font-family:inherit}
+input:focus,select:focus,textarea:focus{border-color:var(--primary)}
+textarea{resize:vertical;min-height:76px}
+
+/* BUTTONS */
+.btn{display:inline-flex;align-items:center;gap:6px;padding:10px 18px;border-radius:var(--r);font-size:14px;font-weight:600;cursor:pointer;border:none;transition:all .15s;font-family:inherit;text-decoration:none}
+.btn-primary{background:var(--primary);color:#fff;width:100%;justify-content:center;padding:12px}
+.btn-primary:hover{background:#1649b5}
+.btn-secondary{background:var(--bg);color:var(--text);border:1.5px solid var(--border)}
+.btn-secondary:hover{background:#e2e8f0}
+.btn-danger{background:var(--red);color:#fff}
+.btn-sm{padding:6px 13px;font-size:13px;width:auto}
+.btn-icon{width:32px;height:32px;padding:0;display:inline-flex;align-items:center;justify-content:center;border-radius:6px;border:1.5px solid var(--border);background:#fff;cursor:pointer;font-size:14px;font-family:inherit;color:var(--text)}
+.btn-icon:hover{background:var(--bg)}
+
+/* APP SHELL */
+#app-screen{flex-direction:column;min-height:100vh}
+.topbar{background:#fff;border-bottom:1px solid var(--border);padding:0 24px;height:56px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100;gap:12px}
+.topbar-brand{font-weight:700;font-size:17px;color:var(--primary);white-space:nowrap}
+.topbar-nav{display:flex;gap:3px;flex-wrap:wrap}
+.nav-tab{padding:6px 14px;border-radius:6px;font-size:13px;font-weight:500;cursor:pointer;border:none;background:none;color:var(--muted);transition:all .15s;font-family:inherit;white-space:nowrap}
+.nav-tab:hover{background:var(--bg);color:var(--text)}
+.nav-tab.active{background:var(--primary-light);color:var(--primary)}
+.topbar-right{display:flex;align-items:center;gap:10px;flex-shrink:0}
+.user-badge{font-size:12px;color:var(--muted);white-space:nowrap}
+.main-content{flex:1;padding:24px;max-width:1400px;margin:0 auto;width:100%}
+.tab-pane{display:none}.tab-pane.active{display:block}
+
+/* GANTT */
+.gantt-wrap{background:#fff;border-radius:12px;box-shadow:var(--sh);overflow:hidden}
+.gantt-head{display:flex;align-items:center;justify-content:space-between;padding:14px 20px;border-bottom:1px solid var(--border);gap:12px;flex-wrap:wrap}
+.gantt-nav{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.gantt-period{font-weight:600;font-size:14px;min-width:190px;text-align:center}
+.gantt-scroll{display:flex;overflow-x:auto}
+.gantt-labels{min-width:210px;flex-shrink:0;border-right:1px solid var(--border)}
+.gl-header{height:56px;padding:0 14px;display:flex;align-items:flex-end;padding-bottom:8px;border-bottom:1px solid var(--border);font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
+.gl-row{height:50px;padding:0 14px;display:flex;align-items:center;border-bottom:1px solid var(--border);font-size:13px;font-weight:500;cursor:pointer;transition:background .1s;gap:8px;overflow:hidden}
+.gl-row:hover{background:var(--bg)}
+.proj-dot{width:9px;height:9px;border-radius:50%;flex-shrink:0}
+.gl-names{overflow:hidden;min-width:0}
+.gl-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.gl-ue{font-size:11px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.gantt-chart{overflow-x:auto}
+.gantt-months{display:flex;height:26px;border-bottom:1px solid var(--border);background:var(--bg)}
+.gm-cell{flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;border-right:1px solid var(--border)}
+.gantt-days{display:flex;height:30px;border-bottom:1px solid var(--border)}
+.gd-cell{flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--muted);border-right:1px solid #f0f0f0}
+.gd-cell.today{background:var(--primary-light);color:var(--primary);font-weight:700}
+.gd-cell.wknd{background:#fafafa;color:#bbb}
+.gantt-rows{position:relative}
+.gantt-row{height:50px;display:flex;position:relative;border-bottom:1px solid var(--border)}
+.gc-cell{flex-shrink:0;border-right:1px solid #f0f0f0;height:100%}
+.gc-cell.wknd{background:#fafafa}.gc-cell.today{background:rgba(26,86,219,.04)}
+.g-bar{position:absolute;top:9px;height:32px;border-radius:6px;cursor:pointer;display:flex;align-items:center;padding:0 10px;font-size:12px;font-weight:600;color:#fff;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;z-index:1;transition:filter .15s;box-shadow:0 2px 4px rgba(0,0,0,.15)}
+.g-bar:hover{filter:brightness(1.1)}
+.gantt-empty{padding:50px 20px;text-align:center;color:var(--muted);font-size:14px}
+
+/* BADGES */
+.badge{display:inline-flex;align-items:center;padding:3px 9px;border-radius:20px;font-size:11px;font-weight:600}
+.b-blue{background:var(--primary-light);color:var(--primary)}
+.b-green{background:#f0fff4;color:var(--green)}
+.b-gray{background:var(--bg);color:var(--muted)}
+
+/* CARDS */
+.sec-hd{display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;gap:12px}
+.sec-title{font-size:18px;font-weight:700}
+.proj-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(310px,1fr));gap:14px}
+.proj-card{background:#fff;border-radius:12px;padding:18px;box-shadow:var(--sh);border:1.5px solid var(--border);cursor:pointer;transition:all .15s}
+.proj-card:hover{border-color:var(--primary);box-shadow:0 4px 16px rgba(26,86,219,.12);transform:translateY(-1px)}
+.pc-head{display:flex;align-items:flex-start;gap:10px;margin-bottom:10px}
+.pc-strip{width:4px;height:46px;border-radius:4px;flex-shrink:0}
+.pc-title{font-size:14px;font-weight:600}
+.pc-sub{font-size:12px;color:var(--muted);margin-top:2px}
+.pc-dates{font-size:12px;color:var(--muted);margin-bottom:8px}
+
+/* UE LIST */
+.ue-item{background:#fff;border-radius:10px;padding:15px 18px;box-shadow:var(--sh);display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+.ue-name{font-weight:600;font-size:14px}
+.ue-email{font-size:12px;color:var(--muted)}
+
+/* STATS */
+.stats{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:14px;margin-bottom:22px}
+.stat{background:#fff;border-radius:12px;padding:18px;box-shadow:var(--sh);text-align:center}
+.stat-val{font-size:28px;font-weight:800;color:var(--primary)}
+.stat-lbl{font-size:12px;color:var(--muted);margin-top:3px;font-weight:500}
+
+/* TIME TABLE */
+.time-tbl{background:#fff;border-radius:12px;box-shadow:var(--sh);overflow:hidden}
+.trow{display:grid;grid-template-columns:100px 1fr auto 72px;align-items:center;padding:11px 18px;border-bottom:1px solid var(--border);font-size:13px;gap:14px}
+.trow:last-child{border-bottom:none}
+.trow.thead{background:var(--bg);font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
+.t-hours{font-weight:700;color:var(--primary);font-size:14px;text-align:right}
+
+/* DIARY */
+.diary-list{display:flex;flex-direction:column;gap:11px}
+.d-entry{background:#fff;border-radius:12px;padding:18px;box-shadow:var(--sh);border-left:4px solid var(--primary)}
+.d-hd{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+.d-date{font-size:13px;font-weight:600;color:var(--primary)}
+.d-proj{font-size:12px;color:var(--muted)}
+.d-text{font-size:14px;line-height:1.65}
+
+/* MY PROJECTS (UE) */
+.mp-item{background:#fff;border-radius:12px;padding:18px;box-shadow:var(--sh);border:1.5px solid var(--border);margin-bottom:12px}
+.mp-hd{display:flex;gap:10px;margin-bottom:12px}
+.mp-title{font-size:15px;font-weight:700}
+.mp-sub{font-size:13px;color:var(--muted);margin-top:2px}
+.detail-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:10px;margin-top:10px}
+.d-item{background:var(--bg);border-radius:8px;padding:10px 13px}
+.d-lbl{font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px}
+.d-val{font-size:14px;font-weight:500;white-space:pre-wrap}
+
+/* MODAL */
+.overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:1000;display:none;align-items:center;justify-content:center;padding:20px}
+.overlay.open{display:flex}
+.modal{background:#fff;border-radius:16px;padding:28px;width:100%;max-width:540px;max-height:92vh;overflow-y:auto;box-shadow:var(--sh-lg)}
+.modal-hd{display:flex;align-items:center;justify-content:space-between;margin-bottom:22px}
+.modal-title{font-size:17px;font-weight:700}
+.modal-x{width:30px;height:30px;border-radius:7px;border:1.5px solid var(--border);background:#fff;cursor:pointer;font-size:18px;color:var(--muted);display:flex;align-items:center;justify-content:center;font-family:inherit}
+.modal-x:hover{background:var(--bg)}
+.modal-ft{margin-top:22px;display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap}
+.two-col{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+
+/* COLORS */
+.colors{display:flex;gap:8px;flex-wrap:wrap}
+.c-opt{width:27px;height:27px;border-radius:50%;cursor:pointer;border:3px solid transparent;transition:all .15s}
+.c-opt.sel{border-color:#333;transform:scale(1.15)}
+
+/* UE CHECKBOXES */
+.ue-cbs{max-height:150px;overflow-y:auto;border:1.5px solid var(--border);border-radius:var(--r);padding:6px}
+.ue-cb{display:flex;align-items:center;gap:8px;padding:6px 7px;border-radius:6px;cursor:pointer;font-size:13px;transition:background .1s}
+.ue-cb:hover{background:var(--bg)}
+.ue-cb input{width:auto;cursor:pointer}
+
+/* ALERTS */
+.alert{padding:11px 14px;border-radius:var(--r);font-size:13px;margin-bottom:14px;line-height:1.6}
+.alert-err{background:#fff5f5;color:var(--red);border:1px solid #fed7d7}
+.alert-info{background:var(--primary-light);color:var(--primary);border:1px solid #bee3f8}
+
+/* SQL BLOCK */
+.sql-block{background:#1e1e2e;color:#cdd6f4;border-radius:10px;padding:14px;font-size:11px;line-height:1.7;overflow-x:auto;white-space:pre;margin-top:10px;font-family:'Courier New',monospace}
+
+@media(max-width:600px){
+  .main-content{padding:14px}
+  .topbar{padding:0 14px}
+  .gantt-labels{min-width:140px}
+  .gl-header,.gl-row{padding:0 10px}
+  .trow{grid-template-columns:90px 1fr 60px}
+  .trow>*:nth-child(3){display:none}
+}
+</style>
+</head>
+<body>
+
+<!-- ══════════════════════════════════
+     SETUP SCREEN
+══════════════════════════════════ -->
+<div id="setup-screen" class="screen">
+  <div class="auth-card" style="max-width:520px">
+    <div class="auth-logo">
+      <div style="font-size:40px;margin-bottom:8px">🎨</div>
+      <h1>Måleri Timeline</h1>
+      <p>Första gången — koppla Supabase</p>
+    </div>
+
+    <div class="alert alert-info" style="font-size:13px;line-height:1.8">
+      <strong>Steg 1.</strong> Gå till <a href="https://supabase.com" target="_blank" style="color:var(--primary)">supabase.com</a> → New project (gratis)<br>
+      <strong>Steg 2.</strong> Project Settings → API → kopiera <em>Project URL</em> och <em>anon public</em> key<br>
+      <strong>Steg 3.</strong> Authentication → Providers → Email → stäng av <em>Confirm email</em><br>
+      <strong>Steg 4.</strong> SQL Editor → klistra in SQL-koden nedan och kör den<br>
+      <strong>Steg 5.</strong> Fyll i URL och nyckel nedan
+    </div>
+
+    <details style="margin-bottom:16px">
+      <summary style="font-size:13px;font-weight:600;cursor:pointer;color:var(--primary)">📋 Visa SQL att köra i Supabase</summary>
+      <div class="sql-block">-- 1. Skapa tabeller
+create table if not exists profiles (
+  id uuid references auth.users(id) primary key,
+  name text not null,
+  email text not null,
+  role text not null default 'ue',
+  created_at timestamptz default now()
+);
+
+create table if not exists projects (
+  id uuid primary key default gen_random_uuid(),
+  name text not null,
+  start_date date not null,
+  end_date date not null,
+  address text,
+  work_type text,
+  materials text,
+  notes text,
+  color text default '#1a56db',
+  assigned_ues uuid[] default '{}',
+  created_by uuid references auth.users(id),
+  created_at timestamptz default now()
+);
+
+create table if not exists time_entries (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid references auth.users(id) not null,
+  project_id uuid references projects(id) on delete cascade not null,
+  date date not null,
+  hours numeric not null,
+  description text,
+  created_at timestamptz default now()
+);
+
+create table if not exists diary_entries (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid references auth.users(id) not null,
+  project_id uuid references projects(id) on delete cascade,
+  date date not null,
+  text text not null,
+  created_at timestamptz default now()
+);
+
+-- 2. Aktivera Row Level Security
+alter table profiles enable row level security;
+alter table projects enable row level security;
+alter table time_entries enable row level security;
+alter table diary_entries enable row level security;
+
+-- 3. RLS-regler
+create policy "read_profiles" on profiles for select using (auth.role()='authenticated');
+create policy "insert_profile" on profiles for insert with check (auth.uid()=id);
+create policy "update_profile" on profiles for update using (auth.uid()=id);
+
+create policy "read_projects" on projects for select using (auth.role()='authenticated');
+create policy "admin_insert_project" on projects for insert with check (
+  (select role from profiles where id=auth.uid())='admin');
+create policy "admin_update_project" on projects for update using (
+  (select role from profiles where id=auth.uid())='admin');
+create policy "admin_delete_project" on projects for delete using (
+  (select role from profiles where id=auth.uid())='admin');
+
+create policy "read_time_entries" on time_entries for select using (auth.role()='authenticated');
+create policy "insert_time_entry" on time_entries for insert with check (auth.uid()=user_id);
+create policy "manage_time_entry" on time_entries for delete using (auth.uid()=user_id);
+
+create policy "read_diary_entries" on diary_entries for select using (auth.role()='authenticated');
+create policy "insert_diary_entry" on diary_entries for insert with check (auth.uid()=user_id);
+create policy "manage_diary_entry" on diary_entries for delete using (auth.uid()=user_id);</div>
+    </details>
+
+    <div class="fg">
+      <label>Supabase Project URL</label>
+      <input id="sb-url" type="url" value="https://pqoeadcydniofqjqaeff.supabase.co">
+    </div>
+    <div class="fg">
+      <label>Supabase anon public key</label>
+      <input id="sb-key" type="text" placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...">
+    </div>
+    <div class="fg">
+      <label>Din admin-e-post</label>
+      <input id="sb-admin" type="email" value="markus.fredriksson@trenad.se">
+    </div>
+    <div id="setup-err" class="alert alert-err" style="display:none"></div>
+    <button class="btn btn-primary" onclick="saveSetup()">Spara och fortsätt →</button>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════
+     LOGIN SCREEN
+══════════════════════════════════ -->
+<div id="login-screen" class="screen">
+  <div class="auth-card">
+    <div class="auth-logo">
+      <div style="font-size:40px;margin-bottom:8px">🎨</div>
+      <h1>Måleri Timeline</h1>
+      <p id="login-sub">Logga in för att fortsätta</p>
+    </div>
+
+    <div id="login-form">
+      <div id="login-err" class="alert alert-err" style="display:none"></div>
+      <div class="fg"><label>E-postadress</label><input id="l-email" type="email" placeholder="din@epost.se"></div>
+      <div class="fg"><label>Lösenord</label><input id="l-pw" type="password" placeholder="••••••••" onkeydown="if(event.key==='Enter')doLogin()"></div>
+      <button class="btn btn-primary" onclick="doLogin()">Logga in</button>
+      <p style="text-align:center;font-size:13px;color:var(--muted);margin-top:14px">
+        Ny UE? <a href="#" onclick="showReg();return false" style="color:var(--primary);font-weight:600">Skapa konto</a>
+      </p>
+    </div>
+
+    <div id="register-form" style="display:none">
+      <div id="reg-err" class="alert alert-err" style="display:none"></div>
+      <div class="fg"><label>Ditt namn</label><input id="r-name" type="text" placeholder="Förnamn Efternamn"></div>
+      <div class="fg"><label>E-postadress</label><input id="r-email" type="email" placeholder="din@epost.se"></div>
+      <div class="fg"><label>Lösenord (minst 6 tecken)</label><input id="r-pw" type="password" placeholder="••••••••" onkeydown="if(event.key==='Enter')doReg()"></div>
+      <button class="btn btn-primary" onclick="doReg()">Skapa konto</button>
+      <p style="text-align:center;font-size:13px;color:var(--muted);margin-top:14px">
+        <a href="#" onclick="showLogin();return false" style="color:var(--primary);font-weight:600">← Tillbaka</a>
+      </p>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════
+     APP SCREEN
+══════════════════════════════════ -->
+<div id="app-screen" class="screen">
+  <div class="topbar">
+    <div class="topbar-brand">🎨 Måleri</div>
+    <div class="topbar-nav" id="topbar-nav"></div>
+    <div class="topbar-right">
+      <span class="user-badge" id="user-badge"></span>
+      <button class="btn btn-secondary btn-sm" onclick="doLogout()">Logga ut</button>
+    </div>
+  </div>
+
+  <!-- ADMIN -->
+  <div id="admin-app" style="display:none;flex:1;flex-direction:column">
+    <div class="main-content">
+      <div id="a-tab-timeline" class="tab-pane active">
+        <div class="gantt-wrap">
+          <div class="gantt-head">
+            <span class="sec-title" style="font-size:16px">📅 Tidslinje</span>
+            <div class="gantt-nav">
+              <button class="btn-icon" onclick="ganttPrev()">◀</button>
+              <span class="gantt-period" id="gantt-lbl"></span>
+              <button class="btn-icon" onclick="ganttNext()">▶</button>
+              <button class="btn btn-secondary btn-sm" onclick="ganttToday()">Idag</button>
+              <button class="btn btn-primary btn-sm" onclick="openProjModal()">+ Nytt projekt</button>
+            </div>
+          </div>
+          <div class="gantt-scroll" id="gantt-scroll"></div>
+        </div>
+      </div>
+      <div id="a-tab-projects" class="tab-pane">
+        <div class="sec-hd"><span class="sec-title">Alla projekt</span>
+          <button class="btn btn-primary btn-sm" onclick="openProjModal()">+ Nytt projekt</button></div>
+        <div class="proj-grid" id="a-proj-list"></div>
+      </div>
+      <div id="a-tab-ues" class="tab-pane">
+        <div class="sec-hd"><span class="sec-title">UE:er</span></div>
+        <div class="stats" id="a-stats"></div>
+        <div id="a-ue-list"></div>
+      </div>
+      <div id="a-tab-diary" class="tab-pane">
+        <div class="sec-hd"><span class="sec-title">📓 Dagbok (alla UE:er)</span></div>
+        <div class="diary-list" id="a-diary-list"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- UE -->
+  <div id="ue-app" style="display:none;flex:1;flex-direction:column">
+    <div class="main-content">
+      <div id="u-tab-timeline" class="tab-pane active">
+        <div id="u-proj-list"></div>
+      </div>
+      <div id="u-tab-time" class="tab-pane">
+        <div class="sec-hd">
+          <span class="sec-title">⏱ Tidrapportering</span>
+          <button class="btn btn-primary btn-sm" onclick="openTimeModal()">+ Lägg till tid</button>
+        </div>
+        <div class="stats">
+          <div class="stat"><div class="stat-val" id="u-total-h">0</div><div class="stat-lbl">Totalt timmar</div></div>
+          <div class="stat"><div class="stat-val" id="u-month-h">0</div><div class="stat-lbl">Denna månad</div></div>
+        </div>
+        <div class="time-tbl">
+          <div class="trow thead"><div>Datum</div><div>Projekt</div><div>Beskrivning</div><div style="text-align:right">Tim</div></div>
+          <div id="u-time-rows"></div>
+        </div>
+      </div>
+      <div id="u-tab-diary" class="tab-pane">
+        <div class="sec-hd">
+          <span class="sec-title">📓 Min dagbok</span>
+          <button class="btn btn-primary btn-sm" onclick="openDiaryModal()">+ Nytt inlägg</button>
+        </div>
+        <div class="diary-list" id="u-diary-list"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- PROJECT MODAL -->
+<div class="overlay" id="proj-overlay">
+  <div class="modal">
+    <div class="modal-hd"><span class="modal-title" id="pm-title">Nytt projekt</span><button class="modal-x" onclick="closeProjModal()">×</button></div>
+    <div class="fg"><label>Projektnummer</label><input id="pm-number" type="text" placeholder="t.ex. 2026-01 eller TRE-05"></div>
+    <div class="fg"><label>Projektnamn *</label><input id="pm-name" type="text" placeholder="t.ex. Villavägen 12 – Fasad"></div>
+    <div class="two-col">
+      <div class="fg"><label>Startdatum *</label><input id="pm-start" type="date"></div>
+      <div class="fg"><label>Slutdatum *</label><input id="pm-end" type="date"></div>
+    </div>
+    <div class="fg"><label>Adress</label><input id="pm-addr" type="text" placeholder="Gatuadress, Stad"></div>
+    <div class="fg">
+      <label>Typ av arbete</label>
+      <select id="pm-type">
+        <option value="">Välj typ...</option>
+        <option>Fasadmålning</option><option>Innermålning</option><option>Spackling</option>
+        <option>Tapetsering</option><option>Lackning</option><option>Takarbete</option><option>Övrigt</option>
+      </select>
+    </div>
+    <div class="fg"><label>Material &amp; förberedelser</label><textarea id="pm-mat" placeholder="Vad UE behöver ta med eller förbereda..."></textarea></div>
+    <div class="fg"><label>Anteckningar till UE</label><textarea id="pm-notes" placeholder="Övrig info, tillträde, kontaktperson..."></textarea></div>
+    <div class="fg"><label>Tilldelade UE:er</label><div class="ue-cbs" id="pm-ue-cbs"><div style="font-size:13px;color:var(--muted);padding:4px">Läser in...</div></div></div>
+    <div class="fg"><label>Projektfärg</label><div class="colors" id="pm-colors"></div></div>
+    <div id="pm-err" class="alert alert-err" style="display:none"></div>
+    <div class="modal-ft">
+      <button class="btn btn-danger btn-sm" id="pm-del-btn" onclick="delProject()" style="display:none;margin-right:auto">🗑 Ta bort</button>
+      <button class="btn btn-secondary btn-sm" onclick="closeProjModal()">Avbryt</button>
+      <button class="btn btn-primary btn-sm" onclick="saveProject()">💾 Spara</button>
+    </div>
+  </div>
+</div>
+
+<!-- TIME MODAL -->
+<div class="overlay" id="time-overlay">
+  <div class="modal" style="max-width:400px">
+    <div class="modal-hd"><span class="modal-title">Lägg till tid</span><button class="modal-x" onclick="closeTimeModal()">×</button></div>
+    <div class="fg"><label>Projekt *</label><select id="tm-proj"></select></div>
+    <div class="fg"><label>Datum *</label><input id="tm-date" type="date"></div>
+    <div class="fg"><label>Antal timmar *</label><input id="tm-h" type="number" min="0.5" max="24" step="0.5" placeholder="8"></div>
+    <div class="fg"><label>Beskrivning</label><input id="tm-desc" type="text" placeholder="Vad gjordes..."></div>
+    <div id="tm-err" class="alert alert-err" style="display:none"></div>
+    <div class="modal-ft">
+      <button class="btn btn-secondary btn-sm" onclick="closeTimeModal()">Avbryt</button>
+      <button class="btn btn-primary btn-sm" onclick="saveTime()">Spara</button>
+    </div>
+  </div>
+</div>
+
+<!-- DIARY MODAL -->
+<div class="overlay" id="diary-overlay">
+  <div class="modal" style="max-width:460px">
+    <div class="modal-hd"><span class="modal-title">Nytt dagboksinlägg</span><button class="modal-x" onclick="closeDiaryModal()">×</button></div>
+    <div class="fg"><label>Projekt</label><select id="dm-proj"></select></div>
+    <div class="fg"><label>Datum</label><input id="dm-date" type="date"></div>
+    <div class="fg"><label>Anteckning *</label><textarea id="dm-text" style="min-height:110px" placeholder="Vad hände idag? Framsteg, observationer, problem..."></textarea></div>
+    <div id="dm-err" class="alert alert-err" style="display:none"></div>
+    <div class="modal-ft">
+      <button class="btn btn-secondary btn-sm" onclick="closeDiaryModal()">Avbryt</button>
+      <button class="btn btn-primary btn-sm" onclick="saveDiary()">Spara</button>
+    </div>
+  </div>
+</div>
+
+<!-- PROJECT DETAIL (UE) -->
+<div class="overlay" id="pd-overlay">
+  <div class="modal">
+    <div class="modal-hd"><span class="modal-title" id="pd-title"></span><button class="modal-x" onclick="closePD()">×</button></div>
+    <div id="pd-body"></div>
+    <div class="modal-ft"><button class="btn btn-secondary btn-sm" onclick="closePD()">Stäng</button></div>
+  </div>
+</div>
+
+<script>
+// ──── GLOBALS ────
+const SB_URL = 'https://pqoeadcydniofqjqaeff.supabase.co';
+const SB_KEY = 'sb_publishable_JstEahRnVZOh1LSBsrc-6w_USk72WQw';
+const ADMIN_EMAIL = 'markus.fredriksson@trenad.se';
+let sb, CU, CUD;
+let projects=[], ues=[], timeEntries=[], diaryEntries=[];
+let editProjId=null;
+const DW=26;
+const COLORS=['#1a56db','#0891b2','#059669','#7c3aed','#db2777','#d97706','#dc2626','#0f766e','#4338ca','#be185d'];
+let ganttStart=null;
+
+// ──── HELPERS ────
+function show(id){document.querySelectorAll('.screen').forEach(s=>s.style.display='none');document.getElementById(id).style.display='flex';}
+function today0(){const d=new Date();d.setHours(0,0,0,0);return d;}
+function toISO(d){return d.toISOString().split('T')[0];}
+function fmtDate(s){if(!s)return'';const d=new Date(s+'T00:00:00');return d.toLocaleDateString('sv-SE',{day:'numeric',month:'short',year:'numeric'});}
+function sbErr(e){return e?(e.message||JSON.stringify(e)):'';}
+
+// ──── SETUP ────
+function saveSetup(){
+  const url=document.getElementById('sb-url').value.trim();
+  const key=document.getElementById('sb-key').value.trim();
+  const admin=document.getElementById('sb-admin').value.trim();
+  const err=document.getElementById('setup-err');
+  err.className='alert alert-err';
+  err.style.display='none';
+  if(!url||!key){err.textContent='Fyll i Project URL och anon key.';err.style.display='block';return;}
+  if(!url.startsWith('https://')){err.textContent='URL ska börja med https://';err.style.display='block';return;}
+  if(typeof supabase==='undefined'){err.textContent='Supabase laddades inte. Kontrollera wifi och ladda om sidan.';err.style.display='block';return;}
+  localStorage.setItem('sbUrl',url);
+  localStorage.setItem('sbKey',key);
+  localStorage.setItem('adminEmail',admin);
+  err.className='alert alert-info';
+  err.textContent='Ansluter till Supabase...';
+  err.style.display='block';
+  try{
+    initSB(url,key);
+  }catch(e){
+    err.className='alert alert-err';
+    err.textContent='Fel: '+e.message;
+    err.style.display='block';
+  }
+}
+
+// ──── INIT SUPABASE ────
+function initSB(url,key){
+  const { createClient } = supabase;
+  sb=createClient(url,key);
+  sb.auth.onAuthStateChange(async(event,session)=>{
+    if(session&&session.user){
+      CU=session.user;
+      await ensureProfile();
+      await bootApp();
+    }else{
+      CU=null;CUD=null;
+      show('login-screen');
+    }
+  });
+}
+
+async function ensureProfile(){
+  const{data,error}=await sb.from('profiles').select('*').eq('id',CU.id).single();
+  if(!data||error){
+    const role=CU.email===ADMIN_EMAIL?'admin':'ue';
+    const name=(CU.user_metadata&&CU.user_metadata.name)||CU.email.split('@')[0];
+    CUD={id:CU.id,name,email:CU.email,role};
+    const{error:ie}=await sb.from('profiles').insert(CUD);
+    if(ie)console.error('Profile insert error:',ie);
+  }else{
+    CUD=data;
+  }
+}
+
+// ──── AUTH ────
+function showLogin(){document.getElementById('login-form').style.display='block';document.getElementById('register-form').style.display='none';document.getElementById('login-sub').textContent='Logga in för att fortsätta';}
+function showReg(){document.getElementById('login-form').style.display='none';document.getElementById('register-form').style.display='block';document.getElementById('login-sub').textContent='Skapa ett nytt konto';}
+
+async function doLogin(){
+  const email=document.getElementById('l-email').value.trim();
+  const pw=document.getElementById('l-pw').value;
+  const err=document.getElementById('login-err');
+  err.style.display='none';
+  if(!email||!pw){err.textContent='Fyll i e-post och lösenord.';err.style.display='block';return;}
+  err.className='alert alert-info';err.textContent='Loggar in...';err.style.display='block';
+  try{
+    const{data,error}=await sb.auth.signInWithPassword({email,password:pw});
+    if(error){err.className='alert alert-err';err.textContent='Fel: '+error.message;err.style.display='block';}
+  }catch(e){
+    err.className='alert alert-err';err.textContent='Fel: '+e.message;err.style.display='block';
+  }
+}
+
+async function doReg(){
+  const name=document.getElementById('r-name').value.trim();
+  const email=document.getElementById('r-email').value.trim();
+  const pw=document.getElementById('r-pw').value;
+  const err=document.getElementById('reg-err');err.style.display='none';
+  if(!name){err.textContent='Ange ditt namn.';err.style.display='block';return;}
+  if(pw.length<6){err.textContent='Lösenordet måste vara minst 6 tecken.';err.style.display='block';return;}
+  const{error}=await sb.auth.signUp({email,password:pw,options:{data:{name}}});
+  if(error){err.textContent=sbErr(error);err.style.display='block';}
+}
+
+async function doLogout(){await sb.auth.signOut();}
+
+// ──── BOOT APP ────
+async function bootApp(){
+  const isAdmin=CUD.role==='admin';
+  document.getElementById('user-badge').textContent=CUD.name+(isAdmin?' (Admin)':'');
+  const nav=document.getElementById('topbar-nav');
+  if(isAdmin){
+    nav.innerHTML=`
+      <button class="nav-tab active" onclick="switchTab('a','timeline',this)">📅 Tidslinje</button>
+      <button class="nav-tab" onclick="switchTab('a','projects',this)">📋 Projekt</button>
+      <button class="nav-tab" onclick="switchTab('a','ues',this)">👷 UE:er</button>
+      <button class="nav-tab" onclick="switchTab('a','diary',this)">📓 Dagbok</button>`;
+    document.getElementById('admin-app').style.display='flex';
+    document.getElementById('ue-app').style.display='none';
+  }else{
+    nav.innerHTML=`
+      <button class="nav-tab active" onclick="switchTab('u','timeline',this)">📅 Uppdrag</button>
+      <button class="nav-tab" onclick="switchTab('u','time',this)">⏱ Tid</button>
+      <button class="nav-tab" onclick="switchTab('u','diary',this)">📓 Dagbok</button>`;
+    document.getElementById('ue-app').style.display='flex';
+    document.getElementById('admin-app').style.display='none';
+  }
+  show('app-screen');
+  await loadData();
+  if(isAdmin){renderTimeline();renderProjects();renderUEs();renderAdminDiary();}
+  else{renderUEProjects();renderUETime();renderUEDiary();}
+}
+
+// ──── LOAD DATA ────
+async function loadData(){
+  const isAdmin=CUD.role==='admin';
+  const{data:pData}=await sb.from('projects').select('*').order('start_date');
+  projects=pData||[];
+  const{data:uData}=await sb.from('profiles').select('*').eq('role','ue');
+  ues=uData||[];
+  if(isAdmin){
+    const{data:tData}=await sb.from('time_entries').select('*').order('date',{ascending:false});
+    timeEntries=tData||[];
+    const{data:dData}=await sb.from('diary_entries').select('*').order('created_at',{ascending:false});
+    diaryEntries=dData||[];
+  }else{
+    const{data:tData}=await sb.from('time_entries').select('*').eq('user_id',CU.id).order('date',{ascending:false});
+    timeEntries=tData||[];
+    const{data:dData}=await sb.from('diary_entries').select('*').eq('user_id',CU.id).order('created_at',{ascending:false});
+    diaryEntries=dData||[];
+  }
+}
+
+// ──── TAB SWITCHING ────
+function switchTab(app,tab,btn){
+  const prefix=app==='a'?'a-tab-':'u-tab-';
+  document.querySelectorAll(`#${app==='a'?'admin':'ue'}-app .tab-pane`).forEach(p=>p.classList.remove('active'));
+  document.querySelectorAll('.nav-tab').forEach(b=>b.classList.remove('active'));
+  document.getElementById(prefix+tab).classList.add('active');
+  if(btn)btn.classList.add('active');
+}
+
+// ──── GANTT ────
+function initGanttStart(){if(!ganttStart){const n=new Date();ganttStart=new Date(n.getFullYear(),n.getMonth(),1);}}
+function ganttPrev(){initGanttStart();ganttStart=new Date(ganttStart.getFullYear(),ganttStart.getMonth()-1,1);renderTimeline();}
+function ganttNext(){initGanttStart();ganttStart=new Date(ganttStart.getFullYear(),ganttStart.getMonth()+1,1);renderTimeline();}
+function ganttToday(){const n=new Date();ganttStart=new Date(n.getFullYear(),n.getMonth(),1);renderTimeline();}
+
+function renderTimeline(){
+  initGanttStart();
+  const visProj=CUD.role==='admin'?projects:projects.filter(p=>p.assigned_ues&&p.assigned_ues.includes(CU.id));
+  const todayD=today0();
+  const startD=new Date(ganttStart);
+  const endD=new Date(ganttStart.getFullYear(),ganttStart.getMonth()+3,0);
+  const totalDays=Math.round((endD-startD)/86400000)+1;
+
+  const mNames=[];let mc=new Date(startD);
+  while(mc<=endD){const mn=mc.toLocaleDateString('sv-SE',{month:'long',year:'numeric'});if(!mNames.includes(mn))mNames.push(mn);mc.setMonth(mc.getMonth()+1);}
+  document.getElementById('gantt-lbl').textContent=mNames.map(m=>m.charAt(0).toUpperCase()+m.slice(1)).join(' – ');
+
+  const days=[];let d=new Date(startD);
+  while(d<=endD){days.push(new Date(d));d.setDate(d.getDate()+1);}
+
+  const mgMap={};
+  days.forEach(day=>{const key=day.getFullYear()+'-'+day.getMonth();if(!mgMap[key])mgMap[key]={label:day.toLocaleDateString('sv-SE',{month:'long'}),count:0};mgMap[key].count++;});
+
+  let monthsHTML=Object.values(mgMap).map(mg=>`<div class="gm-cell" style="width:${mg.count*DW}px">${mg.label.charAt(0).toUpperCase()+mg.label.slice(1)}</div>`).join('');
+  let daysHTML=days.map(day=>{const t=day.getTime()===todayD.getTime(),w=day.getDay()===0||day.getDay()===6;return`<div class="gd-cell${t?' today':w?' wknd':''}" style="width:${DW}px">${day.getDate()}</div>`;}).join('');
+
+  let labelsHTML='<div class="gl-header">Projekt</div>';
+  let rowsHTML='';
+
+  if(!visProj.length){
+    rowsHTML='<div class="gantt-empty">Inga projekt att visa. Lägg till ett projekt ovan.</div>';
+  }else{
+    visProj.forEach(proj=>{
+      const names=(proj.assigned_ues||[]).map(uid=>{const u=ues.find(x=>x.id===uid);return u?u.name:'?';}).join(', ');
+      const clickFn=CUD.role==='admin'?`openProjModal('${proj.id}')`:`showPD('${proj.id}')`;
+      labelsHTML+=`<div class="gl-row" onclick="${clickFn}"><div class="proj-dot" style="background:${proj.color||'#1a56db'}"></div><div class="gl-names"><div class="gl-name">${proj.project_number?proj.project_number+' · ':''}${proj.name}</div>${names?`<div class="gl-ue">${names}</div>`:''}</div></div>`;
+      const projS=new Date(proj.start_date+'T00:00:00'),projE=new Date(proj.end_date+'T00:00:00');
+      const barS=Math.max(0,Math.round((projS-startD)/86400000));
+      const barE=Math.min(totalDays-1,Math.round((projE-startD)/86400000));
+      let barHTML='';
+      if(barE>=0&&barS<totalDays){barHTML=`<div class="g-bar" style="left:${barS*DW}px;width:${Math.max(DW,(barE-barS+1)*DW)}px;background:${proj.color||'#1a56db'}" onclick="${clickFn}">${proj.name}</div>`;}
+      rowsHTML+=`<div class="gantt-row">${days.map(day=>{const w=day.getDay()===0||day.getDay()===6,t=day.getTime()===todayD.getTime();return`<div class="gc-cell${t?' today':w?' wknd':''}" style="width:${DW}px"></div>`;}).join('')}${barHTML}</div>`;
+    });
+  }
+
+  document.getElementById('gantt-scroll').innerHTML=`
+    <div class="gantt-labels">${labelsHTML}</div>
+    <div class="gantt-chart" style="min-width:${totalDays*DW}px">
+      <div class="gantt-months">${monthsHTML}</div>
+      <div class="gantt-days">${daysHTML}</div>
+      <div class="gantt-rows">${rowsHTML}</div>
+    </div>`;
+}
+
+// ──── ADMIN: PROJECTS ────
+function renderProjects(){
+  const el=document.getElementById('a-proj-list');
+  if(!projects.length){el.innerHTML='<div style="color:var(--muted);font-size:14px">Inga projekt ännu.</div>';return;}
+  const now=new Date();
+  el.innerHTML=projects.map(p=>{
+    const names=(p.assigned_ues||[]).map(uid=>{const u=ues.find(x=>x.id===uid);return u?u.name:'?';}).join(', ');
+    const s=new Date(p.start_date),e=new Date(p.end_date);
+    const bc=e<now?'b-gray':s<=now&&e>=now?'b-green':'b-blue';
+    const bt=e<now?'Avslutad':s<=now&&e>=now?'Pågående':'Planerad';
+    return`<div class="proj-card" onclick="openProjModal('${p.id}')">
+      <div class="pc-head">
+        <div class="pc-strip" style="background:${p.color||'#1a56db'}"></div>
+        <div style="flex:1;min-width:0"><div class="pc-title">${p.project_number?'<span style="font-size:11px;font-weight:700;color:var(--primary);margin-right:6px">'+p.project_number+'</span>':''} ${p.name}</div><div class="pc-sub">${[p.address,p.work_type].filter(Boolean).join(' · ')}</div></div>
+        <span class="badge ${bc}">${bt}</span>
+      </div>
+      <div class="pc-dates">📅 ${fmtDate(p.start_date)} → ${fmtDate(p.end_date)}</div>
+      ${names?`<div style="font-size:12px;color:var(--muted)">👷 ${names}</div>`:''}
+    </div>`;
+  }).join('');
+}
+
+// ──── ADMIN: UEs ────
+function renderUEs(){
+  const now=new Date();
+  document.getElementById('a-stats').innerHTML=`
+    <div class="stat"><div class="stat-val">${ues.length}</div><div class="stat-lbl">Registrerade UE:er</div></div>
+    <div class="stat"><div class="stat-val">${projects.length}</div><div class="stat-lbl">Projekt totalt</div></div>
+    <div class="stat"><div class="stat-val">${projects.filter(p=>new Date(p.start_date)<=now&&new Date(p.end_date)>=now).length}</div><div class="stat-lbl">Pågående</div></div>`;
+  const el=document.getElementById('a-ue-list');
+  if(!ues.length){el.innerHTML='<div style="color:var(--muted);font-size:14px">Inga UE:er registrerade än. Be dem skapa konton.</div>';return;}
+  el.innerHTML=ues.map(ue=>{
+    const ap=projects.filter(p=>p.assigned_ues&&p.assigned_ues.includes(ue.id));
+    return`<div class="ue-item"><div><div class="ue-name">👷 ${ue.name}</div><div class="ue-email">${ue.email}</div></div><span class="badge b-blue">${ap.length} projekt</span></div>`;
+  }).join('');
+}
+
+// ──── ADMIN: DIARY ────
+function renderAdminDiary(){
+  const el=document.getElementById('a-diary-list');
+  if(!diaryEntries.length){el.innerHTML='<div style="color:var(--muted);font-size:14px">Inga dagboksinlägg ännu.</div>';return;}
+  el.innerHTML=diaryEntries.map(e=>{
+    const proj=projects.find(p=>p.id===e.project_id);
+    const ue=ues.find(u=>u.id===e.user_id);
+    return`<div class="d-entry" style="border-left-color:${(proj&&proj.color)||'#1a56db'}">
+      <div class="d-hd"><div><div class="d-date">${fmtDate(e.date)}</div><div class="d-proj">${(ue&&ue.name)||'?'} · ${(proj&&proj.name)||'Allmänt'}</div></div></div>
+      <div class="d-text">${e.text}</div>
+    </div>`;
+  }).join('');
+}
+
+// ──── UE: MY PROJECTS ────
+function renderUEProjects(){
+  const el=document.getElementById('u-proj-list');
+  const mine=projects.filter(p=>p.assigned_ues&&p.assigned_ues.includes(CU.id));
+  if(!mine.length){el.innerHTML='<div style="background:#fff;border-radius:12px;padding:40px;text-align:center;color:var(--muted)">Du har inga tilldelade uppdrag just nu.</div>';return;}
+  const now=new Date();
+  mine.sort((a,b)=>{const ord=p=>{const s=new Date(p.start_date),e=new Date(p.end_date);return e<now?2:s<=now?0:1;};return ord(a)-ord(b);});
+  el.innerHTML=mine.map(p=>{
+    const s=new Date(p.start_date),e=new Date(p.end_date);
+    const badge=e<now?'<span class="badge b-gray">Avslutad</span>':s<=now?'<span class="badge b-green">🔥 Pågående</span>':'<span class="badge b-blue">Kommande</span>';
+    return`<div class="mp-item">
+      <div class="mp-hd">
+        <div style="width:5px;height:62px;border-radius:4px;flex-shrink:0;background:${p.color||'#1a56db'}"></div>
+        <div style="flex:1">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
+            <div><div class="mp-title">${p.project_number?`<span style="font-size:12px;color:var(--primary);font-weight:700">${p.project_number} · </span>`:''}${p.name}</div><div class="mp-sub">${p.work_type||''}</div></div>${badge}
+          </div>
+          <div style="margin-top:8px;font-size:13px;color:var(--muted)">📅 ${fmtDate(p.start_date)} → ${fmtDate(p.end_date)}</div>
+        </div>
+      </div>
+      <div class="detail-grid">
+        ${p.address?`<div class="d-item"><div class="d-lbl">📍 Adress</div><div class="d-val">${p.address}</div></div>`:''}
+        ${p.work_type?`<div class="d-item"><div class="d-lbl">🔨 Arbetstyp</div><div class="d-val">${p.work_type}</div></div>`:''}
+        ${p.materials?`<div class="d-item" style="grid-column:1/-1"><div class="d-lbl">🎨 Material &amp; förberedelser</div><div class="d-val">${p.materials}</div></div>`:''}
+        ${p.notes?`<div class="d-item" style="grid-column:1/-1"><div class="d-lbl">📝 Anteckningar</div><div class="d-val">${p.notes}</div></div>`:''}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// ──── UE: TIME ────
+function renderUETime(){
+  const total=timeEntries.reduce((s,e)=>s+Number(e.hours||0),0);
+  const now=new Date();
+  const mh=timeEntries.filter(e=>{const d=new Date(e.date);return d.getMonth()===now.getMonth()&&d.getFullYear()===now.getFullYear();}).reduce((s,e)=>s+Number(e.hours||0),0);
+  document.getElementById('u-total-h').textContent=total.toFixed(1);
+  document.getElementById('u-month-h').textContent=mh.toFixed(1);
+  const el=document.getElementById('u-time-rows');
+  if(!timeEntries.length){el.innerHTML='<div style="padding:22px;text-align:center;color:var(--muted);font-size:14px">Inga registreringar ännu.</div>';return;}
+  el.innerHTML=timeEntries.map(e=>{
+    const proj=projects.find(p=>p.id===e.project_id);
+    return`<div class="trow"><div>${fmtDate(e.date)}</div><div style="font-weight:500">${(proj&&proj.name)||'Okänt'}</div><div style="color:var(--muted)">${e.description||'—'}</div><div class="t-hours">${e.hours}h</div></div>`;
+  }).join('');
+}
+
+// ──── UE: DIARY ────
+function renderUEDiary(){
+  const el=document.getElementById('u-diary-list');
+  if(!diaryEntries.length){el.innerHTML='<div style="color:var(--muted);font-size:14px">Inga inlägg ännu. Skriv ditt första!</div>';return;}
+  el.innerHTML=diaryEntries.map(e=>{
+    const proj=projects.find(p=>p.id===e.project_id);
+    return`<div class="d-entry" style="border-left-color:${(proj&&proj.color)||'#1a56db'}"><div class="d-hd"><div class="d-date">${fmtDate(e.date)}</div><div class="d-proj">${(proj&&proj.name)||'Allmänt'}</div></div><div class="d-text">${e.text}</div></div>`;
+  }).join('');
+}
+
+// ──── PROJECT MODAL ────
+function openProjModal(projId){
+  editProjId=projId||null;
+  const p=projId?projects.find(x=>x.id===projId):null;
+  document.getElementById('pm-title').textContent=p?'Redigera projekt':'Nytt projekt';
+  document.getElementById('pm-del-btn').style.display=p?'block':'none';
+  document.getElementById('pm-err').style.display='none';
+  document.getElementById('pm-number').value=(p&&p.project_number)||'';
+  document.getElementById('pm-name').value=(p&&p.name)||'';
+  document.getElementById('pm-start').value=(p&&p.start_date)||'';
+  document.getElementById('pm-end').value=(p&&p.end_date)||'';
+  document.getElementById('pm-addr').value=(p&&p.address)||'';
+  document.getElementById('pm-type').value=(p&&p.work_type)||'';
+  document.getElementById('pm-mat').value=(p&&p.materials)||'';
+  document.getElementById('pm-notes').value=(p&&p.notes)||'';
+  const cbEl=document.getElementById('pm-ue-cbs');
+  cbEl.innerHTML=ues.length?ues.map(ue=>`<label class="ue-cb"><input type="checkbox" value="${ue.id}" ${p&&p.assigned_ues&&p.assigned_ues.includes(ue.id)?'checked':''}> ${ue.name}</label>`).join(''):'<div style="font-size:13px;color:var(--muted);padding:4px">Inga UE:er registrerade än.</div>';
+  const selColor=(p&&p.color)||COLORS[0];
+  document.getElementById('pm-colors').innerHTML=COLORS.map(c=>`<div class="c-opt${c===selColor?' sel':''}" style="background:${c}" onclick="selColor('${c}',this)"></div>`).join('');
+  document.getElementById('proj-overlay').classList.add('open');
+}
+function closeProjModal(){document.getElementById('proj-overlay').classList.remove('open');editProjId=null;}
+function selColor(c,el){document.querySelectorAll('#pm-colors .c-opt').forEach(x=>x.classList.remove('sel'));el.classList.add('sel');}
+
+async function saveProject(){
+  const err=document.getElementById('pm-err');err.style.display='none';
+  const name=document.getElementById('pm-name').value.trim();
+  const start_date=document.getElementById('pm-start').value;
+  const end_date=document.getElementById('pm-end').value;
+  if(!name||!start_date||!end_date){err.textContent='Fyll i namn, start- och slutdatum.';err.style.display='block';return;}
+  if(end_date<start_date){err.textContent='Slutdatum måste vara efter startdatum.';err.style.display='block';return;}
+  const selEl=document.querySelector('#pm-colors .c-opt.sel');
+  const color=selEl?selEl.style.background:COLORS[0];
+  const assigned_ues=Array.from(document.querySelectorAll('#pm-ue-cbs input:checked')).map(i=>i.value);
+  const data={project_number:document.getElementById('pm-number').value.trim(),name,start_date,end_date,address:document.getElementById('pm-addr').value.trim(),work_type:document.getElementById('pm-type').value,materials:document.getElementById('pm-mat').value.trim(),notes:document.getElementById('pm-notes').value.trim(),color,assigned_ues};
+  let error;
+  if(editProjId){({error}=await sb.from('projects').update(data).eq('id',editProjId));}
+  else{({error}=await sb.from('projects').insert({...data,created_by:CU.id}));}
+  if(error){err.textContent='Fel: '+sbErr(error);err.style.display='block';return;}
+  closeProjModal();await loadData();renderTimeline();renderProjects();renderUEs();
+}
+
+async function delProject(){
+  if(!editProjId||!confirm('Ta bort projektet permanent?'))return;
+  const{error}=await sb.from('projects').delete().eq('id',editProjId);
+  if(error){alert('Fel: '+sbErr(error));return;}
+  closeProjModal();await loadData();renderTimeline();renderProjects();
+}
+
+// ──── PROJECT DETAIL (UE) ────
+function showPD(projId){
+  const p=projects.find(x=>x.id===projId);if(!p)return;
+  document.getElementById('pd-title').textContent=p.name;
+  document.getElementById('pd-body').innerHTML=`<div class="detail-grid">
+    ${p.address?`<div class="d-item"><div class="d-lbl">📍 Adress</div><div class="d-val">${p.address}</div></div>`:''}
+    ${p.work_type?`<div class="d-item"><div class="d-lbl">🔨 Arbetstyp</div><div class="d-val">${p.work_type}</div></div>`:''}
+    <div class="d-item"><div class="d-lbl">📅 Period</div><div class="d-val">${fmtDate(p.start_date)} – ${fmtDate(p.end_date)}</div></div>
+    ${p.materials?`<div class="d-item" style="grid-column:1/-1"><div class="d-lbl">🎨 Material &amp; förberedelser</div><div class="d-val">${p.materials}</div></div>`:''}
+    ${p.notes?`<div class="d-item" style="grid-column:1/-1"><div class="d-lbl">📝 Anteckningar</div><div class="d-val">${p.notes}</div></div>`:''}
+  </div>`;
+  document.getElementById('pd-overlay').classList.add('open');
+}
+function closePD(){document.getElementById('pd-overlay').classList.remove('open');}
+
+// ──── TIME MODAL ────
+function openTimeModal(){
+  const mine=projects.filter(p=>p.assigned_ues&&p.assigned_ues.includes(CU.id));
+  document.getElementById('tm-proj').innerHTML=mine.map(p=>`<option value="${p.id}">${p.name}</option>`).join('');
+  document.getElementById('tm-date').value=toISO(new Date());
+  document.getElementById('tm-h').value='';
+  document.getElementById('tm-desc').value='';
+  document.getElementById('tm-err').style.display='none';
+  document.getElementById('time-overlay').classList.add('open');
+}
+function closeTimeModal(){document.getElementById('time-overlay').classList.remove('open');}
+async function saveTime(){
+  const err=document.getElementById('tm-err');err.style.display='none';
+  const project_id=document.getElementById('tm-proj').value;
+  const date=document.getElementById('tm-date').value;
+  const hours=parseFloat(document.getElementById('tm-h').value);
+  if(!project_id||!date||!hours||hours<=0){err.textContent='Välj projekt, datum och ange timmar.';err.style.display='block';return;}
+  const{error}=await sb.from('time_entries').insert({user_id:CU.id,project_id,date,hours,description:document.getElementById('tm-desc').value.trim()});
+  if(error){err.textContent='Fel: '+sbErr(error);err.style.display='block';return;}
+  closeTimeModal();await loadData();renderUETime();
+}
+
+// ──── DIARY MODAL ────
+function openDiaryModal(){
+  const mine=projects.filter(p=>p.assigned_ues&&p.assigned_ues.includes(CU.id));
+  document.getElementById('dm-proj').innerHTML=`<option value="">— Inget specifikt projekt —</option>`+mine.map(p=>`<option value="${p.id}">${p.name}</option>`).join('');
+  document.getElementById('dm-date').value=toISO(new Date());
+  document.getElementById('dm-text').value='';
+  document.getElementById('dm-err').style.display='none';
+  document.getElementById('diary-overlay').classList.add('open');
+}
+function closeDiaryModal(){document.getElementById('diary-overlay').classList.remove('open');}
+async function saveDiary(){
+  const err=document.getElementById('dm-err');err.style.display='none';
+  const text=document.getElementById('dm-text').value.trim();
+  const date=document.getElementById('dm-date').value;
+  if(!text||!date){err.textContent='Fyll i datum och anteckning.';err.style.display='block';return;}
+  const proj_val=document.getElementById('dm-proj').value;
+  const{error}=await sb.from('diary_entries').insert({user_id:CU.id,project_id:proj_val||null,date,text});
+  if(error){err.textContent='Fel: '+sbErr(error);err.style.display='block';return;}
+  closeDiaryModal();await loadData();renderUEDiary();
+}
+
+// ──── OVERLAY CLOSE ON BACKDROP ────
+document.querySelectorAll('.overlay').forEach(o=>o.addEventListener('click',e=>{if(e.target===o)o.classList.remove('open');}));
+
+// ──── STARTUP ────
+window.addEventListener('DOMContentLoaded', function(){
+  if(typeof supabase === 'undefined'){
+    document.body.innerHTML='<div style="display:flex;align-items:center;justify-content:center;min-height:100vh;background:#1a56db"><div style="background:#fff;border-radius:16px;padding:40px;max-width:400px;text-align:center"><div style="font-size:40px;margin-bottom:12px">⚠️</div><h2 style="margin-bottom:12px">Ingen internetanslutning</h2><p style="color:#718096;font-size:14px">Appen behöver internet för att ladda. Kontrollera att du är ansluten till wifi och ladda om sidan.</p></div></div>';
+    return;
+  }
+  show('login-screen');
+  initSB(SB_URL, SB_KEY);
+});
+</script>
+</body>
+</html>
